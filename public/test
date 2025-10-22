@@ -1,0 +1,678 @@
+ class VirtualVillaClient {
+    constructor() {
+        this.devices = new Map();
+        this.hasCreatedLight = false;
+        this.motionSensitivity = 15;
+        this.lastMotionTime = 0;
+        this.setupEventListeners();
+        this.initializeVilla();
+    }
+    
+    setupEventListeners() {
+        // Villa status updates
+        socket.on('villa-status', (status) => {
+            console.log('🏡 Villa status received:', status);
+            this.updateVillaStatus(status);
+        });
+        
+        // Device events
+        socket.on('device-registered', (device) => {
+            console.log('📱 Device registered:', device);
+            this.addDeviceToMap(device);
+            this.updateSensorCount();
+        });
+        
+        socket.on('device-state-changed', (data) => {
+            console.log('🔄 Device state changed:', data);
+            this.updateDeviceState(data.deviceId, data.state);
+        });
+        
+        // Automation events
+        socket.on('automation-action', (action) => {
+            console.log('⚡ Automation action:', action);
+            this.executeAutomationAction(action);
+        });
+        
+        // Motion sensor events
+        socket.on('motion-detected', (data) => {
+            console.log('📱 Motion event:', data);
+            this.handleMotionEvent(data);
+        });
+    }
+    
+    initializeVilla() {
+        console.log('🏡 VirtualVilla Client Initialized - DEBUG MODE');
+        this.removeLightOverlay();
+        
+        // Create devices
+        this.createVirtualLight('Main Villa Light', 'living-room');
+        this.createVirtualMotionSensor('Entry Sensor', 'living-room');
+        
+        this.setupMotionDetection();
+        this.createDebugUI();
+        
+        // Setup automation after devices are created
+        setTimeout(() => {
+            this.createAutomation('motion-sensor-living-room', 'light-living-room', 'turnOn');
+        }, 1000);
+        
+        // Run complete system test
+        setTimeout(() => {
+            this.testCompleteSystem();
+        }, 3000);
+    }
+
+    // 🆕 DEBUG METHOD
+    debugMotionSensor() {
+        console.log('🔍 === MOTION SENSOR DEBUG ===');
+        console.log('📱 All devices:', Array.from(this.devices.keys()));
+        
+        const motionSensors = Array.from(this.devices.values()).filter(device => 
+            device.type === 'motion-sensor'
+        );
+        
+        console.log('🎯 Motion sensors found:', motionSensors.length);
+        motionSensors.forEach(sensor => {
+            console.log(`   📱 ${sensor.name}:`, {
+                id: sensor.id,
+                room: sensor.room,
+                state: sensor.state
+            });
+        });
+        
+        const lights = Array.from(this.devices.values()).filter(device => 
+            device.type === 'light'
+        );
+        
+        console.log('💡 Lights found:', lights.length);
+        lights.forEach(light => {
+            console.log(`   💡 ${light.name}:`, {
+                id: light.id,
+                room: light.room, 
+                state: light.state
+            });
+        });
+        
+        this.updateLastAction('Debug completed');
+    }
+
+    // 🆕 COMPLETE SYSTEM TEST
+    testCompleteSystem() {
+        console.log('🧪 === COMPLETE SYSTEM TEST ===');
+        
+        // 1. Check devices
+        this.debugMotionSensor();
+        
+        // 2. Test motion detection
+        setTimeout(() => {
+            console.log('🧪 TEST: Manually triggering motion...');
+            this.triggerMotionDetection();
+            this.updateLastAction('Motion triggered manually');
+        }, 1000);
+        
+        // 3. Check light status
+        setTimeout(() => {
+            console.log('🧪 TEST: Checking light status...');
+            let anyLightsOn = false;
+            this.devices.forEach((device, deviceId) => {
+                if (device.type === 'light' && device.state.isOn) {
+                    console.log(`   ✅ SUCCESS: ${device.name} is ON!`);
+                    anyLightsOn = true;
+                }
+            });
+            
+            if (!anyLightsOn) {
+                console.log('   ❌ PROBLEM: No lights turned on automatically');
+                console.log('   💡 This means the automation is not working');
+            }
+        }, 2500);
+    }
+
+    createVirtualMotionSensor(name, room) {
+        console.log(`🎯 Creating motion sensor: ${name} in ${room}`);
+        
+        const sensor = {
+            name: name,
+            type: 'motion-sensor',
+            room: room,
+            capabilities: ['motion-detection'],
+            initialState: { motionDetected: false, lastTriggered: null }
+        };
+        
+        socket.emit('register-device', sensor);
+        console.log(`📱 Motion sensor created in ${room}`);
+        console.log(`🔍 Expected device ID: motion-sensor-${room}`);
+    }
+    
+    createVirtualLight(name, room) {
+        console.log(`💡 Creating light: ${name} in ${room}`);
+        
+        const light = {
+            name: name,
+            type: 'light',
+            room: room,
+            capabilities: ['on-off', 'brightness'],
+            initialState: { isOn: false, brightness: 0 }
+        };
+        
+        socket.emit('register-device', light);
+        console.log(`🔍 Expected device ID: light-${room}`);
+    }
+
+    setupMotionDetection() {
+        console.log('🎯 Setting up motion detection...');
+        
+        if (window.DeviceMotionEvent) {
+            console.log('📱 Device motion detection: ENABLED');
+            
+            window.addEventListener('devicemotion', (event) => {
+                const acceleration = event.accelerationIncludingGravity;
+                if (!acceleration) return;
+                
+                const movement = Math.abs(acceleration.x || 0) + 
+                               Math.abs(acceleration.y || 0) + 
+                               Math.abs(acceleration.z || 0);
+                
+                const now = Date.now();
+                
+                if (movement > this.motionSensitivity && now - this.lastMotionTime > 3000) {
+                    console.log(`📱 Motion detected! Movement: ${movement.toFixed(2)}`);
+                    this.lastMotionTime = now;
+                    this.triggerMotionDetection();
+                    this.showMotionFeedback();
+                }
+            });
+        } else {
+            console.log('📱 Device motion detection: NOT SUPPORTED - using click simulation');
+            this.setupClickMotionDetection();
+        }
+    }
+    
+    setupClickMotionDetection() {
+        let clickCount = 0;
+        let lastClickTime = 0;
+        
+        document.addEventListener('click', (event) => {
+            if (event.target.tagName === 'BUTTON') return;
+            
+            const now = Date.now();
+            
+            if (now - lastClickTime < 500) {
+                clickCount++;
+                if (clickCount >= 2) {
+                    console.log('🖱️ Double-click detected - simulating motion');
+                    this.triggerMotionDetection();
+                    this.showMotionFeedback();
+                    clickCount = 0;
+                }
+            } else {
+                clickCount = 1;
+            }
+            
+            lastClickTime = now;
+        });
+    }
+    
+    triggerMotionDetection() {
+        console.log('🎯 Triggering motion detection...');
+        
+        let triggeredCount = 0;
+        
+        this.devices.forEach((device, deviceId) => {
+            if (device.type === 'motion-sensor') {
+                console.log(`⚡ Triggering sensor: ${deviceId}`);
+                
+                socket.emit('device-state-update', {
+                    deviceId: deviceId,
+                    state: { 
+                        motionDetected: true,
+                        lastTriggered: new Date().toISOString()
+                    }
+                });
+                
+                triggeredCount++;
+                
+                setTimeout(() => {
+                    socket.emit('device-state-update', {
+                        deviceId: deviceId,
+                        state: { motionDetected: false }
+                    });
+                }, 2000);
+            }
+        });
+        
+        console.log(`🎯 Triggered ${triggeredCount} motion sensors`);
+        this.updateLastAction(`Triggered ${triggeredCount} sensors`);
+        
+        if (triggeredCount === 0) {
+            console.warn('⚠️ No motion sensors found to trigger!');
+        }
+    }
+    
+    createAutomation(triggerDeviceId, targetDeviceId, action) {
+        console.log('🔧 Creating automation...');
+        console.log(`   Trigger: ${triggerDeviceId}`);
+        console.log(`   Target: ${targetDeviceId}`);
+        console.log(`   Action: ${action}`);
+        
+        // Check if devices exist
+        const triggerExists = this.devices.has(triggerDeviceId);
+        const targetExists = this.devices.has(targetDeviceId);
+        
+        console.log(`   Trigger exists: ${triggerExists}`);
+        console.log(`   Target exists: ${targetExists}`);
+        
+        if (!triggerExists || !targetExists) {
+            console.error('❌ Automation creation failed: Devices not found');
+            return;
+        }
+        
+        const automation = {
+            name: `${triggerDeviceId} → ${targetDeviceId}`,
+            trigger: {
+                type: "device-state",
+                deviceId: triggerDeviceId,
+                stateKey: "motionDetected",
+                stateValue: true
+            },
+            actions: [
+                {
+                    deviceId: targetDeviceId,
+                    action: action
+                }
+            ]
+        };
+        
+        socket.emit('create-automation', automation);
+        console.log('✅ Automation created and sent to server');
+    }
+    
+    // 🆕 DEBUG UI
+    createDebugUI() {
+        const debugUI = document.createElement('div');
+        debugUI.id = 'debug-ui';
+        debugUI.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            z-index: 1000;
+            max-width: 350px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        `;
+        
+        debugUI.innerHTML = `
+            <h3 style="margin: 0 0 15px 0; color: #ecf0f1; border-bottom: 1px solid #34495e; padding-bottom: 10px;">
+                🔧 VirtualVilla Debug
+            </h3>
+            
+            <div style="margin-bottom: 10px;">
+                <strong>📱 Motion Sensors:</strong> 
+                <span id="sensor-count" style="color: #3498db;">0</span>
+            </div>
+            
+            <div style="margin-bottom: 10px;">
+                <strong>💡 Lights:</strong> 
+                <span id="light-count" style="color: #f1c40f;">0</span>
+            </div>
+            
+            <div style="margin-bottom: 15px; background: #34495e; padding: 8px; border-radius: 5px;">
+                <strong>🔧 Status:</strong><br>
+                <span id="motion-status" style="color: #e74c3c;">Initializing...</span>
+            </div>
+
+            <div style="margin-bottom: 10px; font-size: 12px; color: #bdc3c7;">
+                <strong>Last Action:</strong><br>
+                <span id="last-action">Waiting...</span>
+            </div>
+
+            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                <button onclick="villa.debugMotionSensor()" style="padding: 8px 12px; background: #95a5a6; color: white; border: none; border-radius: 5px; cursor: pointer; flex: 1;">
+                    🔍 Debug
+                </button>
+                <button onclick="villa.triggerMotionDetection()" style="padding: 8px 12px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; flex: 1;">
+                    🎯 Test Motion
+                </button>
+                <button onclick="villa.testCompleteSystem()" style="padding: 8px 12px; background: #9b59b6; color: white; border: none; border-radius: 5px; cursor: pointer; flex: 1;">
+                    🧪 Full Test
+                </button>
+            </div>
+
+            <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #34495e; font-size: 11px; color: #7f8c8d;">
+                <strong>Test Methods:</strong><br>
+                • Click "Test Motion" above<br>
+                • Double-click page (desktop)<br>
+                • Move phone (mobile)<br>
+                • Check browser console (F12)
+            </div>
+        `;
+        
+        document.body.appendChild(debugUI);
+    }
+
+    updateSensorCount() {
+        const motionSensors = Array.from(this.devices.values()).filter(device => 
+            device.type === 'motion-sensor'
+        );
+        const lights = Array.from(this.devices.values()).filter(device => 
+            device.type === 'light'
+        );
+        
+        document.getElementById('sensor-count').textContent = motionSensors.length;
+        document.getElementById('light-count').textContent = lights.length;
+        
+        if (motionSensors.length > 0 && lights.length > 0) {
+            document.getElementById('motion-status').textContent = 'Ready for testing';
+            document.getElementById('motion-status').style.color = '#2ecc71';
+        }
+    }
+
+    updateLastAction(action) {
+        document.getElementById('last-action').textContent = `${action} - ${new Date().toLocaleTimeString()}`;
+    }
+
+    showMotionFeedback() {
+        const feedback = document.createElement('div');
+        feedback.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(46, 204, 113, 0.9);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 25px;
+            font-size: 1.3rem;
+            font-weight: bold;
+            z-index: 10000;
+            pointer-events: none;
+            animation: fadeOut 1s forwards;
+        `;
+        
+        feedback.textContent = '📱 Motion Detected!';
+        document.body.appendChild(feedback);
+        
+        setTimeout(() => {
+            feedback.remove();
+        }, 1000);
+        
+        this.updateLastAction('Motion detected');
+    }
+
+    // 🆕 ADD THESE MISSING METHODS
+    removeLightOverlay() {
+        const lightOverlay = document.getElementById('virtual-light-overlay');
+        if (lightOverlay) {
+            lightOverlay.remove();
+        }
+    }
+
+    updateVillaStatus(status) {
+        console.log('🏡 Updating villa status display');
+        const statusGrid = document.getElementById('statusGrid');
+        if (statusGrid) {
+            statusGrid.innerHTML = `
+                <div class="status-card">
+                    <h3>🏠 Total Rooms</h3>
+                    <div style="font-size: 2rem; color: #ecf0f1;">${status.rooms.length}</div>
+                </div>
+                <div class="status-card">
+                    <h3>💡 Active Devices</h3>
+                    <div style="font-size: 2rem; color: #27ae60;">${status.totalDevices}</div>
+                </div>
+                <div class="status-card">
+                    <h3>⚡ Automations</h3>
+                    <div style="font-size: 2rem; color: #e67e22;">${status.automations}</div>
+                </div>
+                <div class="status-card">
+                    <h3>🌐 Status</h3>
+                    <div style="font-size: 2rem; color: #3498db;">🟢 Online</div>
+                </div>
+            `;
+        }
+    }
+
+    addDeviceToMap(device) {
+        console.log('🏡 Adding device to map:', device.name, device.id);
+        this.devices.set(device.id, {
+            ...device,
+            turnOn: () => this.turnOnDevice(device.id),
+            turnOff: () => this.turnOffDevice(device.id),
+            increaseBrightness: () => this.increaseBrightness(device.id),
+            decreaseBrightness: () => this.decreaseBrightness(device.id)
+        });
+        this.updateSensorCount();
+    }
+
+    turnOnDevice(deviceId) {
+        console.log('💡 Turning on device:', deviceId);
+        const device = this.devices.get(deviceId);
+        if (device) {
+            this.updateLightOverlay(100);
+            socket.emit('device-state-update', {
+                deviceId: deviceId,
+                state: { isOn: true, brightness: 100 }
+            });
+            this.updateLastAction(`Turned on ${device.name}`);
+        }
+    }
+
+    turnOffDevice(deviceId) {
+        console.log('💡 Turning off device:', deviceId);
+        const device = this.devices.get(deviceId);
+        if (device) {
+            this.removeLightOverlay();
+            socket.emit('device-state-update', {
+                deviceId: deviceId,
+                state: { isOn: false, brightness: 0 }
+            });
+            this.updateLastAction(`Turned off ${device.name}`);
+        }
+    }
+
+    increaseBrightness(deviceId) {
+        console.log('🔆 Increasing brightness:', deviceId);
+        const device = this.devices.get(deviceId);
+        if (device) {
+            const currentBrightness = device.state.brightness || 0;
+            
+            if (!device.state.isOn) {
+                const newBrightness = 25;
+                this.updateLightOverlay(newBrightness);
+                socket.emit('device-state-update', {
+                    deviceId: deviceId,
+                    state: { isOn: true, brightness: newBrightness }
+                });
+            } else {
+                const newBrightness = Math.min(100, currentBrightness + 25);
+                this.updateLightOverlay(newBrightness);
+                socket.emit('device-state-update', {
+                    deviceId: deviceId,
+                    state: { isOn: true, brightness: newBrightness }
+                });
+            }
+        }
+    }
+
+    decreaseBrightness(deviceId) {
+        console.log('🔅 Decreasing brightness:', deviceId);
+        const device = this.devices.get(deviceId);
+        if (device) {
+            const currentBrightness = device.state.brightness || 0;
+            
+            if (!device.state.isOn) {
+                console.log('💡 Light is off, cannot dim');
+                return;
+            }
+            
+            const newBrightness = Math.max(0, currentBrightness - 25);
+            
+            if (newBrightness === 0) {
+                this.turnOffDevice(deviceId);
+            } else {
+                this.updateLightOverlay(newBrightness);
+                socket.emit('device-state-update', {
+                    deviceId: deviceId,
+                    state: { isOn: true, brightness: newBrightness }
+                });
+            }
+        }
+    }
+
+    updateLightOverlay(brightness) {
+        let lightOverlay = document.getElementById('virtual-light-overlay');
+        
+        if (!lightOverlay) {
+            lightOverlay = document.createElement('div');
+            lightOverlay.id = 'virtual-light-overlay';
+            lightOverlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 9999;
+            `;
+            document.body.appendChild(lightOverlay);
+        }
+        
+        const opacity = brightness / 200;
+        lightOverlay.style.background = `radial-gradient(circle at center, rgba(255,255,200,${opacity}) 0%, rgba(255,255,150,${opacity * 0.7}) 50%, transparent 70%)`;
+    }
+
+    updateDeviceState(deviceId, state) {
+        console.log('🔄 Updating device state:', deviceId, state);
+        const device = this.devices.get(deviceId);
+        
+        if (!device) return;
+        
+        device.state = { ...device.state, ...state };
+        
+        const deviceElement = document.getElementById(`device-element-${deviceId}`);
+        if (deviceElement) {
+            if (device.type === 'motion-sensor') {
+                if (state.motionDetected) {
+                    deviceElement.classList.remove('motion-inactive');
+                    deviceElement.classList.add('motion-detected');
+                } else {
+                    deviceElement.classList.remove('motion-detected');
+                    deviceElement.classList.add('motion-inactive');
+                }
+                
+                const statusElement = deviceElement.querySelector('.device-status');
+                if (statusElement) {
+                    statusElement.textContent = `${device.type} • ${state.motionDetected ? '🟢 Motion Detected!' : '⚪ No Motion'}`;
+                }
+            } else {
+                if (state.isOn !== undefined) {
+                    if (state.isOn) {
+                        deviceElement.classList.remove('off');
+                        deviceElement.classList.add('on');
+                    } else {
+                        deviceElement.classList.remove('on');
+                        deviceElement.classList.add('off');
+                    }
+                }
+                
+                const statusElement = deviceElement.querySelector('.device-status');
+                if (statusElement) {
+                    statusElement.textContent = `${device.type} • ${device.state.isOn ? `🟢 ${device.state.brightness}%` : '🔴 Off'}`;
+                }
+            }
+        }
+    }
+
+    executeAutomationAction(action) {
+        console.log('⚡ Executing automation action:', action);
+        if (action.action === 'turnOn') {
+            this.turnOnDevice(action.deviceId);
+        } else if (action.action === 'turnOff') {
+            this.turnOffDevice(action.deviceId);
+        }
+    }
+
+    handleMotionEvent(data) {
+        console.log('📱 Motion event received:', data);
+        this.devices.forEach((device, deviceId) => {
+            if (device.type === 'motion-sensor' && device.room === data.room) {
+                this.updateDeviceState(deviceId, { motionDetected: data.motionDetected });
+            }
+        });
+        
+        if (data.motionDetected) {
+            this.showMotionFeedback();
+        }
+    }
+
+    getDeviceIcon(type) {
+        const icons = {
+            'light': '💡',
+            'motion-sensor': '📱',
+            'sensor': '📱',
+            'camera': '📷',
+            'switch': '🔌',
+            'display': '📺'
+        };
+        return icons[type] || '📟';
+    }
+
+    createDeviceHTML(device) {
+        const isOn = device.state.isOn;
+        const deviceId = device.id;
+        const brightness = device.state.brightness || 0;
+        const motionDetected = device.state.motionDetected || false;
+        
+        if (device.type === 'motion-sensor') {
+            return `
+                <div class="device ${motionDetected ? 'motion-detected' : 'motion-inactive'}" id="device-element-${deviceId}">
+                    <div class="device-header">
+                        <div class="device-info">
+                            <div class="device-name">${this.getDeviceIcon(device.type)} ${device.name}</div>
+                            <div class="device-status">
+                                ${device.type} • ${motionDetected ? '🟢 Motion Detected!' : '⚪ No Motion'}
+                            </div>
+                        </div>
+                        <div class="device-controls">
+                            <button class="btn btn-info" onclick="villa.triggerMotionDetection()">
+                                🎯 Test Motion
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="device ${isOn ? 'on' : 'off'}" id="device-element-${deviceId}">
+                <div class="device-header">
+                    <div class="device-info">
+                        <div class="device-name">${this.getDeviceIcon(device.type)} ${device.name}</div>
+                        <div class="device-status">
+                            ${device.type} • ${isOn ? `🟢 ${brightness}%` : '🔴 Off'}
+                        </div>
+                    </div>
+                    <div class="device-controls">
+                        <button class="btn btn-success" onclick="villa.increaseBrightness('${deviceId}')">
+                            🔆 Brighten
+                        </button>
+                        <button class="btn btn-warning" onclick="villa.decreaseBrightness('${deviceId}')">
+                            🔅 Dim
+                        </button>
+                        <button class="btn btn-danger" onclick="villa.turnOffDevice('${deviceId}')">
+                            ⚫ Off
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+}
+
+// Initialize
+const villa = new VirtualVillaClient();

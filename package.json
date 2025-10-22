@@ -1,0 +1,25 @@
+{
+  "name": "virtualvilla",
+  "version": "1.0.0",
+  "description": "Zero-cost smart home using web browsers as virtual devices",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "smart-home",
+    "iot",
+    "automation",
+    "virtual-devices"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
